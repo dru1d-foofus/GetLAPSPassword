@@ -107,8 +107,11 @@ class GetLAPSPassword:
                     elif str(attribute['type']) == 'ms-MCS-AdmPwd':
                         lapsPassword = str(attribute['vals'][0])
                     elif str(attribute['type']) == 'ms-MCS-AdmPwdExpirationTime':
-                        lapsPasswordExpiration = str(datetime.fromtimestamp(self.getUnixTime(int(str(attribute['vals'][0])))))
-
+                        try:
+                            lapsPasswordExpiration = str(datetime.fromtimestamp(self.getUnixTime(int(attribute['vals'][0]))))
+                        except ValueError:
+                            logging.warning("Invalid integer value found for lapsPasswordExpiration")
+                            lapsPasswordExpiration = 'N/A'
                 print((self.__outputFormat.format(*[sAMAccountName, lapsPassword, lapsPasswordExpiration])))
             except Exception as e:
                 logging.error('Error processing record: %s', str(e))
