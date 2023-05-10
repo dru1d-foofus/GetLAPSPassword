@@ -97,29 +97,30 @@ class GetLAPSPassword:
         return t
 
     def processRecord(self, item):
-            sAMAccountName = 'N/A'
-            lapsPassword = 'N/A'
-            lapsPasswordExpiration = 'N/A'
-            try:
-                for attribute in item['attributes']:
-                    if str(attribute['type']) == 'sAMAccountName':
-                        sAMAccountName = str(attribute['vals'][0])
-                    elif str(attribute['type']) == 'ms-MCS-AdmPwd':
-                        lapsPassword = str(attribute['vals'][0])
-                    elif str(attribute['type']) == 'ms-MCS-AdmPwdExpirationTime':
-                        try:
-                            lapsPasswordExpiration = str(datetime.fromtimestamp(self.getUnixTime(int(attribute['vals'][0]))))
-                        except ValueError:
-                            logging.warning("Invalid integer value found for lapsPasswordExpiration")
-                            lapsPasswordExpiration = 'N/A'
-                print((self.__outputFormat.format(*[sAMAccountName, lapsPassword, lapsPasswordExpiration])))
-            except Exception as e:
-                logging.error('Error processing record: %s', str(e))
-                logging.debug(item, exc_info=True)
-            except Exception as e:
-                logging.debug("Exception", exc_info=True)
-                logging.error('Skipping item, cannot process due to error %s' % str(e))
-                pass
+        if isinstance(item, ldapasn1.SearchResultEntry) is not True:
+            return
+        cn = 'N/A'
+        lapsPassword = 'N/A'
+        lapsPasswordExpiration = 'N/A'
+        laps_enabled = False
+        try:
+            for attribute in item['attributes']:
+                if str(attribute['type']) == 'cn':
+                    cn = attribute_vals[0].asOctets().decode('utf-8')
+                elif str(attribute['type']) == 'ms-MCS-AdmPwd':
+                    lapsPassword = attribute_vals[0].asOctets().decode('utf-8')
+                    laps_enabled = True
+                elif str(attribute['type']) == 'ms-MCS-AdmPwdExpirationTime':
+                    if str(attribute_vals[0]) == '0':
+                        lapsPasswordExpiration = 'N/A'
+                    else:
+                        lapsPasswordExpiration = datetime.fromtimestamp(self.getUnixTime(int(str(attribute_vals[0])))).strftime('%Y-%m-%d %H:%M:%S')
+            print((self.__outputFormat.format(*[cn, lapsPassword, lapsPasswordExpiration])))
+        except Exception as e:
+            logging.error('Error processing record: %s', str(e))
+            logging.debug(item, exc_info=True)
+            pass
+        return laps_enabled
 
     def run(self):
         if self.__kdcHost is not None:
@@ -167,20 +168,23 @@ class GetLAPSPassword:
         print(('  '.join(['-' * itemLen for itemLen in self.__colLen])))
 
         # Building the search filter
+        searchFilter = "(&(objectCategory=computer)(ms-MCS-AdmPwd=*))"  # Default search filter value
         if self.__allComputers:
-            searchFilter = "(&(objectCategory=computer)(ms-MCS-AdmPwd=*)(ms-MCS-AdmPwdExpirationTime=*))"
+            pass  # Already set to the default value
         elif self.__targetComputer is not None:
-            searchFilter = "(&(objectCategory=computer)(sAMAccountName=%s)(ms-MCS-AdmPwd=*)(ms-MCS-AdmPwdExpirationTime=*))"
+            searchFilter = "(&(objectCategory=computer)(ms-MCS-AdmPwd=*)(cn=%s))"
             searchFilter = searchFilter % self.__targetComputer
 
         try:
             logging.debug('Search Filter=%s' % searchFilter)
             sc = ldap.SimplePagedResultsControl(size=100)
             # Search for computer objects and include the 'ms-MCS-AdmPwdExpirationTime' attribute
-            searchFilter = "(&(objectCategory=computer)(ms-MCS-AdmPwd=*)(ms-MCS-AdmPwdExpirationTime=*))"
-            ldapConnection.search(searchFilter=searchFilter,
-                                  attributes=['sAMAccountName', 'ms-MCS-AdmPwd', 'ms-MCS-AdmPwdExpirationTime'],
+            laps_enabled = ldapConnection.search(searchFilter=searchFilter,
+                                  attributes=['cn', 'ms-MCS-AdmPwd', 'ms-MCS-AdmPwdExpirationTime'],
                                   sizeLimit=0, searchControls = [sc], perRecordCallback=self.processRecord)
+            if not laps_enabled:
+                print("\n[!] LAPS is not enabled for this domain.")
+
         except ldap.LDAPSearchError:
                 raise
 
@@ -203,7 +207,7 @@ if __name__ == '__main__':
     group.add_argument('-hashes', action="store", metavar = "LMHASH:NTHASH", help='NTLM hashes, format is LMHASH:NTHASH')
     group.add_argument('-no-pass', action="store_true", help='don\'t ask for password (useful for -k)')
     group.add_argument('-k', action="store_true", help='Use Kerberos authentication. Grabs credentials from ccache file '
-                                                       '(KRB5CCNAME) based on target parameters. If valid credentials '
+                                                       '(KRB5CcnAME) based on target parameters. If valid credentials '
                                                        'cannot be found, it will use the ones specified in the command '
                                                        'line')
     group.add_argument('-aesKey', action="store", metavar = "hex key", help='AES key to use for Kerberos Authentication '
