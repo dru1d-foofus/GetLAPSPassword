@@ -106,15 +106,16 @@ class GetLAPSPassword:
         try:
             for attribute in item['attributes']:
                 if str(attribute['type']) == 'cn':
-                    cn = attribute_vals[0].asOctets().decode('utf-8')
-                elif str(attribute['type']) == 'ms-MCS-AdmPwd':
-                    lapsPassword = attribute_vals[0].asOctets().decode('utf-8')
-                    laps_enabled = True
-                elif str(attribute['type']) == 'ms-MCS-AdmPwdExpirationTime':
-                    if str(attribute_vals[0]) == '0':
+                    cn = attribute['vals'][0].asOctets().decode('utf-8')
+                elif str(attribute['type']) == 'ms-Mcs-AdmPwdExpirationTime':
+                    if str(attribute['vals'][0]) == '0':
                         lapsPasswordExpiration = 'N/A'
                     else:
-                        lapsPasswordExpiration = datetime.fromtimestamp(self.getUnixTime(int(str(attribute_vals[0])))).strftime('%Y-%m-%d %H:%M:%S')
+                        lapsPasswordExpiration = datetime.fromtimestamp(self.getUnixTime(int(str(attribute['vals'][0])))).strftime('%Y-%m-%d %H:%M:%S')
+                elif str(attribute['type']) == 'ms-Mcs-AdmPwd':
+                    lapsPassword = attribute['vals'][0].asOctets().decode('utf-8')
+                    laps_enabled = True
+
             print((self.__outputFormat.format(*[cn, lapsPassword, lapsPasswordExpiration])))
         except Exception as e:
             logging.error('Error processing record: %s', str(e))
@@ -168,11 +169,11 @@ class GetLAPSPassword:
         print(('  '.join(['-' * itemLen for itemLen in self.__colLen])))
 
         # Building the search filter
-        searchFilter = "(&(objectCategory=computer)(ms-MCS-AdmPwd=*))"  # Default search filter value
+        searchFilter = "(&(objectCategory=computer)(ms-Mcs-AdmPwdExpirationtime=*))"  # Default search filter value
         if self.__allComputers:
             pass  # Already set to the default value
         elif self.__targetComputer is not None:
-            searchFilter = "(&(objectCategory=computer)(ms-MCS-AdmPwd=*)(cn=%s))"
+            searchFilter = "(&(objectCategory=computer)(ms-Mcs-AdmPwdExpirationtime=*)(cn=%s))"
             searchFilter = searchFilter % self.__targetComputer
 
         try:
@@ -182,7 +183,7 @@ class GetLAPSPassword:
             laps_enabled = ldapConnection.search(searchFilter=searchFilter,
                                   attributes=['cn', 'ms-MCS-AdmPwd', 'ms-MCS-AdmPwdExpirationTime'],
                                   sizeLimit=0, searchControls = [sc], perRecordCallback=self.processRecord)
-            if not laps_enabled:
+            if laps_enabled == False:
                 print("\n[!] LAPS is not enabled for this domain.")
 
         except ldap.LDAPSearchError:
