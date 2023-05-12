@@ -24,6 +24,7 @@ from __future__ import unicode_literals
 import argparse
 import logging
 import sys
+import os
 from datetime import datetime
 
 from impacket import version
@@ -35,7 +36,7 @@ from impacket.smbconnection import SMBConnection, SessionError
 
 
 class GetLAPSPassword:
-    def __init__(self, username, password, domain, cmdLineOptions):
+    def __init__(self, username, password, domain, cmdLineOptions, output_file=None):
         self.options = cmdLineOptions
         self.__username = username
         self.__password = password
@@ -66,6 +67,40 @@ class GetLAPSPassword:
         self.__header = ["Name", "LAPS Password", "LAPS Password Expiration"]
         self.__colLen = [20, 20, 30]
         self.__outputFormat = ' '.join(['{%d:%ds} ' % (num, width) for num, width in enumerate(self.__colLen)])
+
+        # Output file magic
+        self.__output_file = output_file
+
+        # If output_file is provided, open it in write mode
+        if self.__output_file:
+            self.__file = open(self.__output_file, 'w')
+    
+    def __write_to_file(self, data):
+        if self.__output_file:
+            self.__file.write(data + '\n')
+
+    def test_output_file(self):
+        if not self.__output_file:
+            print("No output file specified.")
+            return
+
+        # Generate sample data
+        sample_data = [
+            ("Computer1", "SamplePassword1", "2023-05-15 13:23:00"),
+            ("Computer2", "SamplePassword2", "2023-06-10 08:45:30"),
+        ]
+
+        # Print and write sample data
+        for data in sample_data:
+            data_line = '|'.join(data)
+            print(data_line)
+            self.__write_to_file(data_line)
+
+        print("Sample data written to the output file.")
+
+    def finish(self):
+        if self.__output_file:
+            self.__file.close()
 
     def getMachineName(self, target):
         try:
@@ -121,6 +156,12 @@ class GetLAPSPassword:
             logging.error('Error processing record: %s', str(e))
             logging.debug(item, exc_info=True)
             pass
+        cn = "test"
+        lapsPassword = "as13r34,234!dfa"
+        lapsPasswordExpiration = '2023-06-08ASDF'
+        output_line = self.__outputFormat.format(*[cn, lapsPassword, lapsPasswordExpiration])
+        print(output_line)
+        self.__write_to_file(output_line.replace(' ', '|'))  # Save the output to a PSV
         return laps_enabled
 
     def run(self):
@@ -190,6 +231,8 @@ class GetLAPSPassword:
                 raise
 
         ldapConnection.close()
+        if self.__output_file:
+            self.__file.close()
 
 # Process command-line arguments.
 if __name__ == '__main__':
@@ -203,6 +246,7 @@ if __name__ == '__main__':
 
     parser.add_argument('-ts', action='store_true', help='Adds timestamp to every logging output')
     parser.add_argument('-debug', action='store_true', help='Turn DEBUG output ON')
+    parser.add_argument('-outputfile', '-o', action='store', help='Outputs to a file.')
 
     group = parser.add_argument_group('authentication')
     group.add_argument('-hashes', action="store", metavar = "LMHASH:NTHASH", help='NTLM hashes, format is LMHASH:NTHASH')
@@ -227,6 +271,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     options = parser.parse_args()
+    output_file = options.outputfile
 
     # Init the example's logger theme
     logger.init(options.ts)
@@ -252,8 +297,13 @@ if __name__ == '__main__':
         options.k = True
 
     try:
-        executer = GetLAPSPassword(username, password, domain, options)
+        executer = GetLAPSPassword(username, password, domain, options, output_file)
         executer.run()
+
+        # Run the test function to create a sample output file; comment out the executor.run() above and uncomment
+        # the line below.
+        #executer.test_output_file()
+        executer.finish()
     except Exception as e:
         if logging.getLogger().level == logging.DEBUG:
             import traceback
